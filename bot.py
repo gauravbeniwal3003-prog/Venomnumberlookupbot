@@ -16,7 +16,7 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 logger = logging.getLogger(__name__)
 
 # ============= HARDCODED CONFIGURATION =============
-BOT_TOKEN = "7752472424:AAH8xWkDMP08fD_DEC98_kwtovPczpI9-so" 
+BOT_TOKEN = "7752472424:AAFW045z9xWUXvQX5MAKCoi8FNLO22pOl0Y" 
 ADMIN_USER_ID = 8981634835  
 
 # Supabase Configuration
