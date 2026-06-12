@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 # ============= HARDCODED CONFIGURATION =============
 BOT_TOKEN = "7752472424:AAH8xWkDMP08fD_DEC98_kwtovPczpI9-so" 
-ADMIN_USER_ID = 7850023357  # Updated Admin ID
+ADMIN_USER_ID = 7850023357  # Updated Admin User ID
 
 # Supabase Configuration
 SUPABASE_URL = "https://gclwzfkxneiwzagbkwkx.supabase.co"
@@ -51,6 +51,12 @@ def start_health_server():
 def is_admin(user_id: int) -> bool:
     return user_id == ADMIN_USER_ID
 
+def escape_username(username: Optional[str]) -> str:
+    """Escapes underscores in usernames with a backslash for Telegram Markdown stability"""
+    if not username:
+        return "N/A"
+    return username.replace("_", "\\_")
+
 def remove_branding(text: str) -> str:
     lines = text.split('\n')
     filtered_lines = []
@@ -61,7 +67,6 @@ def remove_branding(text: str) -> str:
 
 def get_user_plan(user_id: int, username: str = None) -> Dict:
     try:
-        # Sync username if available
         if username and username.startswith('@'):
             username = username[1:]
             
@@ -157,7 +162,7 @@ def get_admin_keyboard():
         [InlineKeyboardButton("✅ Activate Plan", callback_data="admin_activate")],
         [InlineKeyboardButton("❌ Deactivate Plan", callback_data="admin_deactivate")],
         [InlineKeyboardButton("🔧 Toggle Maintenance Mode", callback_data="admin_maintenance")],
-        [InlineKeyboardButton("📊 View All Users", callback_data="admin_users")],
+        [InlineKeyboardButton("📊 View Recent Users", callback_data="admin_users")],
         [InlineKeyboardButton("👤 Check User Info", callback_data="admin_check_user")],
         [InlineKeyboardButton("🚫 Close Menu", callback_data="admin_close")]
     ]
@@ -173,15 +178,15 @@ def start(update: Update, context: CallbackContext):
     get_user_plan(user.id, user.username)
     
     welcome_msg = f"""
-⚡ *Welcome to VIP Number Lookup Bot!* ⚡
+⚡ *Welcome to Premium Number Lookup Bot!* ⚡
 
 ✨ *Features:*
-• 📞 *Number Lookup:* Fetch comprehensive Indian registration logs.
-• 🚀 *Get Unlimited Access:* Unlock infinite restrictions.
-• 📊 *My Plan:* Instant real-time status tracker.
+• 📞 *Number Lookup:* Pull registered data securely.
+• 🚀 *Get Unlimited Access:* Request administrative access validation.
+• 📊 *My Plan:* Check real-time plan info instantly.
 
-💡 *How to use:*
-Press **📞 Number Lookup** button and send a 10-digit mobile number!
+💡 *Instructions:*
+Press the **📞 Number Lookup** button and provide any 10-digit mobile number!
     """
     update.message.reply_text(welcome_msg, parse_mode='Markdown', reply_markup=get_main_keyboard())
 
@@ -189,61 +194,64 @@ def handle_message(update: Update, context: CallbackContext):
     text = update.message.text
     user_id = update.effective_user.id
     
-    # Intercept admin actions smoothly
+    # Intercept administrative custom entries securely
     if is_admin(user_id) and context.user_data.get('admin_action'):
         handle_admin_input(update, context)
         return
 
-    # Maintenance check logic
+    # Global Maintenance Mode Interception
     if check_maintenance() and not is_admin(user_id):
-        update.message.reply_text("🔧 *Bot under maintenance!* We are updating database configurations. Please check back later.", parse_mode='Markdown')
+        update.message.reply_text("🔧 *System Maintenance:* The bot is currently undergoing structural maintenance. Please check back later.", parse_mode='Markdown')
         return
     
-    # One-time validation block to prevent multi-lookup glitch
+    # One-Time Validation Loop to avoid multi-lookup glitch
     if context.user_data.get('waiting_for_number'):
         if text.isdigit() and len(text) == 10:
-            context.user_data['waiting_for_number'] = False # Reset immediately
+            context.user_data['waiting_for_number'] = False  # Reset immediately before lookup
             process_number_lookup(update, context, text)
         else:
-            update.message.reply_text("❌ *Invalid format!* Please provide a valid 10-digit number.", parse_mode='Markdown', reply_markup=get_back_button())
+            update.message.reply_text("❌ *Invalid Number Format!* Please provide a valid 10-digit number.", parse_mode='Markdown', reply_markup=get_back_button())
         return
     
     if text == "📞 Number Lookup":
         context.user_data['waiting_for_number'] = True
-        update.message.reply_text("📱 *Please type your 10-digit phone number:*", parse_mode='Markdown', reply_markup=get_back_button())
+        update.message.reply_text("📱 *Please send the 10-digit mobile number you want to look up:*", parse_mode='Markdown', reply_markup=get_back_button())
         
     elif text == "🚀 Get Unlimited Access":
         user = update.effective_user
-        username = f"@{user.username}" if user.username else "No Username"
+        escaped_user = escape_username(user.username)
+        username_str = f"@{escaped_user}" if user.username else "No Username"
         user_link = f"tg://user?id={user.id}"
         
-        admin_msg = f"🔔 *New Plan Request!*\n\n👤 *User:* {username}\n🆔 *User ID:* `{user.id}`\n[Direct Chat Link]({user_link})"
+        admin_msg = f"🔔 *New Access Plan Request!*\n\n👤 *User:* {username_str}\n🆔 *User ID:* `{user.id}`\n[Direct User Link]({user_link})"
         context.bot.send_message(ADMIN_USER_ID, admin_msg, parse_mode='Markdown')
         
-        update.message.reply_text(f"🚀 *Contact Owner sathi:* {ADMIN_USERNAME}\n\nOwner tumhala verify karun plan manually activate kartil!", parse_mode='Markdown')
+        escaped_admin = escape_username(ADMIN_USERNAME)
+        update.message.reply_text(f"🚀 *Contact Owner:* {escaped_admin}\n\nThe owner has been notified and will verify and activate your plan manually!", parse_mode='Markdown')
         
     elif text == "📊 My Plan":
         plan_info = get_user_plan(user_id, update.effective_user.username)
         if plan_info['active']:
             expiry_str = plan_info['expiry'].strftime('%Y-%m-%d %H:%M:%S UTC')
             remaining = plan_info['expiry'] - datetime.now(plan_info['expiry'].tzinfo)
-            plan_msg = f"⭐ *Premium Status* ⭐\n━━━━━━━━━━━━━━━━━\n✅ *Status:* Active\n📋 *Plan:* {plan_info['plan_type'].upper()}\n📅 *Expires:* {expiry_str}\n⏳ *Remaining:* {remaining.days} Days"
+            plan_msg = f"⭐ *Your Premium Subscription* ⭐\n━━━━━━━━━━━━━━━━━\n✅ *Status:* Active\n📋 *Plan Type:* {plan_info['plan_type'].upper()}\n📅 *Expires:* {expiry_str}\n⏳ *Remaining:* {remaining.days} Days"
         else:
-            plan_msg = f"⚠️ *No Active Plan Found!*\n━━━━━━━━━━━━━━━━━\n❌ *Status:* Inactive\n\nClick **🚀 Get Unlimited Access** to request permission from {ADMIN_USERNAME}."
+            escaped_admin = escape_username(ADMIN_USERNAME)
+            plan_msg = f"⚠️ *No Active Subscription!*\n━━━━━━━━━━━━━━━━━\n❌ *Status:* Inactive\n\nClick **🚀 Get Unlimited Access** to upgrade your permissions via {escaped_admin}."
         update.message.reply_text(plan_msg, parse_mode='Markdown')
         
     elif text == "⚙️ Admin Panel" and is_admin(user_id):
-        update.message.reply_text("🔐 *Admin Management Suite*", parse_mode='Markdown', reply_markup=get_admin_keyboard())
+        update.message.reply_text("🔐 *Administrative Management Panel*", parse_mode='Markdown', reply_markup=get_admin_keyboard())
 
 def process_number_lookup(update: Update, context: CallbackContext, number: str):
     user_id = update.effective_user.id
     plan_info = get_user_plan(user_id)
     
     if not plan_info['active']:
-        update.message.reply_text("⚠️ *Access Denied!* Active plan chi garaj ahe. Krupaya access vikat gya.", parse_mode='Markdown')
+        update.message.reply_text("⚠️ *Access Denied!* An active plan is required to look up records. Please purchase a plan.", parse_mode='Markdown')
         return
     
-    processing_msg = update.message.reply_text("⚡ *Fetching Secure Records...*", parse_mode='Markdown')
+    processing_msg = update.message.reply_text("⚡ *Processing Database Search...*", parse_mode='Markdown')
     data = number_lookup(number)
     
     if data and data.get('status') == 'success' and data.get('success'):
@@ -251,33 +259,34 @@ def process_number_lookup(update: Update, context: CallbackContext, number: str)
         results_found = data.get('results_found', 0)
         
         if results_found > 0:
-            result_text = f"📱 *Lookup Results for:* `{number}`\n━━━━━━━━━━━━━━━━━\n📊 *Total Found:* {results_found}\n━━━━━━━━━━━━━━━━━\n\n"
+            result_text = f"📱 *Lookup Results for:* `{number}`\n━━━━━━━━━━━━━━━━━\n📊 *Total Records Found:* {results_found}\n━━━━━━━━━━━━━━━━━\n\n"
             for i in range(1, results_found + 1):
                 result_key = f"Result {i}"
                 if result_key in results:
                     res = results[result_key]
                     result_text += f"*Record #{i}:*\n"
                     result_text += f"👤 *Name:* {res.get('name', 'N/A')}\n"
-                    result_text += f"👨 *Father:* {res.get('father_name', 'N/A')}\n"
+                    result_text += f"👨 *Father Name:* {res.get('father_name', 'N/A')}\n"
                     result_text += f"📱 *Mobile:* {res.get('mobile', 'N/A')}\n"
                     if res.get('alt_mobile') and res.get('alt_mobile') != 'n/a':
-                        result_text += f"📞 *Alt:* {res.get('alt_mobile')}\n"
+                        result_text += f"📞 *Alt Mobile:* {res.get('alt_mobile')}\n"
                     if res.get('aadhar_number') and res.get('aadhar_number') != 'n/a':
                         result_text += f"🆔 *Aadhar:* `{res.get('aadhar_number')}`\n"
-                    result_text += f"📡 *Carrier:* {res.get('operator', 'N/A')} ({res.get('state_circle', 'N/A')})\n"
+                    result_text += f"📡 *Operator:* {res.get('operator', 'N/A')} ({res.get('state_circle', 'N/A')})\n"
                     result_text += f"🏠 *Address:* {res.get('address', 'N/A')}\n─────────────────\n"
             
             clean_text = remove_branding(result_text)
-            # Break down chunks if string length exceeds telegram limitations
+            
+            # Send in chunks if it exceeds maximum character constraints
             if len(clean_text) > 4000:
                 for chunk in [clean_text[i:i+4000] for i in range(0, len(clean_text), 4000)]:
                     update.message.reply_text(chunk, parse_mode='Markdown')
             else:
                 update.message.reply_text(clean_text, parse_mode='Markdown')
         else:
-            update.message.reply_text(f"❌ *No Data Found!*\n\nNo information is registered with this number: *{number}*", parse_mode='Markdown')
+            update.message.reply_text(f"❌ *No Data Found*\n\nNo information is registered with this number: *{number}*", parse_mode='Markdown')
     else:
-        update.message.reply_text("❌ *System lookup error.* Server upstaged or connection timed out.", parse_mode='Markdown')
+        update.message.reply_text("❌ *System Error:* Unable to complete data fetch. API might be experiencing downtime.", parse_mode='Markdown')
     
     try:
         processing_msg.delete()
@@ -291,38 +300,39 @@ def handle_callback_query(update: Update, context: CallbackContext):
     if query.data == "main_menu":
         context.user_data['waiting_for_number'] = False
         query.message.delete()
-        query.message.reply_text("📋 *Main Selection Interface:*", reply_markup=get_main_keyboard(), parse_mode='Markdown')
+        query.message.reply_text("📋 *Main Interactive Menu:*", reply_markup=get_main_keyboard(), parse_mode='Markdown')
         
     elif query.data == "admin_activate" and is_admin(update.effective_user.id):
         context.user_data['admin_action'] = 'activate'
-        query.message.reply_text("📝 *Format to Activate Plan:*\n\n`@username days` kiwa `userid days` \n\n*Example:* `@JohnDoe 30` kiwa `1234567 30`", parse_mode='Markdown')
+        query.message.reply_text("📝 *Provide Activation Data:*\n\nFormat:\n`@username days` or `userid days` \n\n*Example:* `@John_Doe 30` or `7850023357 30`", parse_mode='Markdown')
         
     elif query.data == "admin_deactivate" and is_admin(update.effective_user.id):
         context.user_data['admin_action'] = 'deactivate'
-        query.message.reply_text("❌ *Deactivate Account Plan:*\n\nSend Target `@username` or `user_id` directly.", parse_mode='Markdown')
+        query.message.reply_text("❌ *Provide Account Deactivation Info:*\n\nSend Target `@username` or raw `user_id` directly.", parse_mode='Markdown')
         
     elif query.data == "admin_maintenance" and is_admin(update.effective_user.id):
         current = check_maintenance()
         new_status = not current
         supabase.table("settings").upsert({"key": "maintenance_mode", "value": new_status}).execute()
         status_txt = "ENABLED 🟡" if new_status else "DISABLED 🟢"
-        query.message.reply_text(f"🔧 *Maintenance Updated successfully:* {status_txt}", parse_mode='Markdown')
+        query.message.reply_text(f"🔧 *Maintenance Mode updated successfully:* {status_txt}", parse_mode='Markdown')
         
     elif query.data == "admin_users" and is_admin(update.effective_user.id):
         response = supabase.table("users").select("*").execute()
         users = response.data or []
         if users:
-            msg = "📊 *Current DB Accounts Logs:*\n━━━━━━━━━━━━━━━━━\n"
+            msg = "📊 *Recent Database Entries:*\n━━━━━━━━━━━━━━━━━\n"
             for u in users[-15:]:
-                status = "✅ Premium" if u.get('plan_active') else "❌ Expired"
-                msg += f"🆔 ID: `{u['telegram_id']}` | User: @{u.get('username','N/A')}\n📈 Status: {status}\n─────────────────\n"
+                status = "✅ Premium" if u.get('plan_active') else "❌ Inactive"
+                escaped_u = escape_username(u.get('username', 'N/A'))
+                msg += f"🆔 ID: `{u['telegram_id']}` | User: @{escaped_u}\n📈 Status: {status}\n─────────────────\n"
             query.message.reply_text(msg[:4000], parse_mode='Markdown')
         else:
-            query.message.reply_text("No structural accounts recorded inside table database.", parse_mode='Markdown')
+            query.message.reply_text("No recorded system entry indexes inside the database.", parse_mode='Markdown')
             
     elif query.data == "admin_check_user" and is_admin(update.effective_user.id):
         context.user_data['admin_action'] = 'check_user'
-        query.message.reply_text("👤 Send User ID or Username profile to crawl state logs info:", parse_mode='Markdown')
+        query.message.reply_text("👤 Send the User ID or Username profile to crawl data logs:", parse_mode='Markdown')
         
     elif query.data == "admin_close":
         query.message.delete()
@@ -330,14 +340,14 @@ def handle_callback_query(update: Update, context: CallbackContext):
 def handle_admin_input(update: Update, context: CallbackContext):
     text = update.message.text
     action = context.user_data.get('admin_action')
-    context.user_data['admin_action'] = None # Clear transaction immediately
+    context.user_data['admin_action'] = None  # Clear action status step immediately
     
     if action == 'activate':
         parts = text.split()
         if len(parts) == 2:
             target, days_str = parts[0], parts[1]
             if not days_str.isdigit():
-                update.message.reply_text("❌ Plan validation crash: Days target integer asawa hava.")
+                update.message.reply_text("❌ Activation Error: Day criteria value must be an integer.")
                 return
             days = int(days_str)
             
@@ -350,11 +360,12 @@ def handle_admin_input(update: Update, context: CallbackContext):
                 except: pass
                 
             if success:
-                update.message.reply_text(f"✅ *Plan Activated Successfully:* {target} sathi {days} Diwas.")
+                escaped_target = escape_username(target)
+                update.message.reply_text(f"✅ *Plan Activated Successfully:* {escaped_target} for {days} days.", parse_mode='Markdown')
             else:
-                update.message.reply_text("❌ Record sync missing: Target identity Supabase madhe nahi sapadli.")
+                update.message.reply_text("❌ Sync Error: Profile target identity not found inside database indexes.")
         else:
-            update.message.reply_text("❌ Invalid entry syntax format.")
+            update.message.reply_text("❌ Input Syntax Validation Failed.")
             
     elif action == 'deactivate':
         if text.startswith('@'):
@@ -362,7 +373,8 @@ def handle_admin_input(update: Update, context: CallbackContext):
         else:
             try: supabase.table("users").update({"plan_active": False, "plan_expiry": None}).eq("telegram_id", int(text)).execute()
             except: pass
-        update.message.reply_text(f"❌ *Plan Deactivated:* {text}")
+        escaped_text = escape_username(text)
+        update.message.reply_text(f"❌ *Plan Deactivated:* {escaped_text}", parse_mode='Markdown')
         
     elif action == 'check_user':
         if text.startswith('@'):
@@ -373,28 +385,29 @@ def handle_admin_input(update: Update, context: CallbackContext):
             
         if res and res.data:
             u = res.data[0]
-            update.message.reply_text(f"👤 *Database Account Profile:*\n\n🆔 ID: `{u['telegram_id']}`\n👤 Name: @{u.get('username','N/A')}\n✅ Active: {u.get('plan_active')}\n📅 Expiration: {u.get('plan_expiry')}", parse_mode='Markdown')
+            escaped_u = escape_username(u.get('username', 'N/A'))
+            update.message.reply_text(f"👤 *Database User Profile Info:*\n\n🆔 ID: `{u['telegram_id']}`\n👤 Name: @{escaped_u}\n✅ Plan Active: {u.get('plan_active')}\n📅 Expiration: {u.get('plan_expiry')}", parse_mode='Markdown')
         else:
-            update.message.reply_text("❌ Account profile index lookup failed.")
+            update.message.reply_text("❌ User profiling extraction lookup target missing.")
 
 def forward_handler(update: Update, context: CallbackContext):
-    # Admin check for forwarded account information profiling
     if is_admin(update.effective_user.id):
         msg = update.message
         target_user = msg.forward_from
         if target_user:
-            info = f"📨 *Forwarded Profile Extraction:*\n\n👤 *Full Name:* {target_user.full_name}\n🆔 *User ID:* `{target_user.id}`\n👤 *Username:* @{target_user.username if target_user.username else 'None'}"
+            escaped_username = escape_username(target_user.username)
+            info = f"📨 *Forwarded Profile Extraction:*\n\n👤 *Full Name:* {target_user.full_name}\n🆔 *User ID:* `{target_user.id}`\n👤 *Username:* @{escaped_username if target_user.username else 'None'}"
             msg.reply_text(info, parse_mode='Markdown')
         elif msg.forward_sender_name:
-            msg.reply_text(f"📨 *Forwarded Profile (Privacy Lock Enabled):*\n\n👤 *Name:* {msg.forward_sender_name}\n⚠️ Profile lookup restricted via global settings.")
+            msg.reply_text(f"📨 *Forwarded Profile (Privacy Lock Active):*\n\n👤 *Name:* {msg.forward_sender_name}\n⚠️ User restricted forward data exposure.")
         else:
-            msg.reply_text("❌ Forward metadata package extraction failed.")
+            msg.reply_text("❌ Metadata parsing on forward pack failed.")
 
 def error_handler(update, context):
-    logger.error(f"Telegram pipeline error caught: {context.error}")
+    logger.error(f"Telegram processing pipeline error caught: {context.error}")
 
 def main():
-    # Satisfy Render port specification architecture cleanly
+    # Satisfy Render port specification dynamically via a background daemon thread
     health_thread = threading.Thread(target=start_health_server, daemon=True)
     health_thread.start()
 
@@ -407,7 +420,7 @@ def main():
     dp.add_handler(CallbackQueryHandler(handle_callback_query))
     dp.add_error_handler(error_handler)
     
-    print("🤖 VIP Telegram Bot Deployment Active...")
+    print("🤖 Live Deployment Status: Active...")
     updater.start_polling()
     updater.idle()
 
