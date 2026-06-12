@@ -90,7 +90,6 @@ def check_maintenance() -> bool:
         response = supabase.table("settings").select("value").eq("key", "maintenance_mode").execute()
         if response.data and len(response.data) > 0:
             val = response.data[0].get("value")
-            # Handle string and boolean cases cleanly
             if isinstance(val, str):
                 return val.lower() == 'true'
             return bool(val)
@@ -179,7 +178,7 @@ def handle_message(update: Update, context: CallbackContext):
     text = update.message.text
     user_id = update.effective_user.id
     
-    # FIX: Intercept admin text inputs before evaluating general routing
+    # Intercept admin text inputs before evaluating general routing
     if is_admin(user_id) and context.user_data.get('admin_action'):
         handle_admin_input(update, context)
         return
@@ -441,7 +440,7 @@ def forward_handler(update: Update, context: CallbackContext):
 
 👤 *Name:* {name}
 🆔 *User ID:* `{user_id}`  
-👤 *Username:* @{username if username else 'N/A'}
+👤 *Username:* @{username if username else '/A'}
         """
         update.message.reply_text(info_msg, parse_mode='Markdown')
 
@@ -459,7 +458,9 @@ def main():
     dp.add_handler(CommandHandler("start", start))
     dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
     dp.add_handler(MessageHandler(Filters.forwarded, forward_handler))
-    dp.add_callback_queryHandler(CallbackQueryHandler(handle_callback_query))
+    
+    # FIXED: Corrected method name from add_callback_queryHandler to add_handler
+    dp.add_handler(CallbackQueryHandler(handle_callback_query))
     dp.add_error_handler(error_handler)
     
     print("🤖 Bot is starting...")
