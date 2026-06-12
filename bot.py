@@ -18,8 +18,8 @@ logger = logging.getLogger(__name__)
 # ============= CONFIGURATION =============
 BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"  # Replace with your bot token
 ADMIN_USER_ID = 8981634835  # Admin user ID
-SUPABASE_URL = "YOUR_SUPABASE_URL"  # Replace with your Supabase URL
-SUPABASE_KEY = "YOUR_SUPABASE_KEY"  # Replace with your Supabase anon/public key
+SUPABASE_URL = "https://gclwzfkxneiwzagbkwkx.supabase.co"  # Replace with your Supabase URL
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdjbHd6Zmt4bmVpd3phZ2Jrd2t4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM5MjY3MzEsImV4cCI6MjA4OTUwMjczMX0.N586sznUms88IaYKUBQ5LzKmrj0HYYupN3Pifojw4Ls"  # Replace with your Supabase anon/public key
 
 # API Configuration
 LOOKUP_API = "https://tracexdata-api.onrender.com/api/lookup?key=Cybersecurity&numquery={}"
