@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 # ============= HARDCODED CONFIGURATION =============
 BOT_TOKEN = "7752472424:AAFW045z9xWUXvQX5MAKCoi8FNLO22pOl0Y" 
-ADMIN_USER_ID = 7850023357  # Active Dashboard Admin Identifier from screenshots
+ADMIN_USER_ID = 8981634835  # Active Dashboard Admin Identifier from screenshots
 
 # Supabase Storage Core Configurations
 SUPABASE_URL = "https://gclwzfkxneiwzagbkwkx.supabase.co"
