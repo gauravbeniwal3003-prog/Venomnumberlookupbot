@@ -16,7 +16,7 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 logger = logging.getLogger(__name__)
 
 # ============= HARDCODED CONFIGURATION =============
-BOT_TOKEN = "7752472424:AAFW045z9xWUXvQX5MAKCoi8FNLO22pOl0Y" 
+BOT_TOKEN = os.environ.get("BOT_TOKEN" 
 ADMIN_USER_ID = 8981634835  # Active Dashboard Admin Identifier from screenshots
 
 # Supabase Storage Core Configurations
