@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 # ============= ENVIRONMENT SECURED CONFIGURATION =============
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "7526906483:AAG7KGrVqSxkGjP7FJf-uvCEfzbHE5qkYHs")
-ADMIN_USER_ID = 8981634835  
+ADMIN_USER_ID = 7850023357  
 
 # Supabase Storage Core Configurations
 SUPABASE_URL = "https://gclwzfkxneiwzagbkwkx.supabase.co"
