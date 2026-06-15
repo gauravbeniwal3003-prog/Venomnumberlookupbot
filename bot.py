@@ -36,21 +36,23 @@ FREE_LOOKUP_CREDITS = 10
 
 # Credit-based plans
 CREDIT_PLANS = {
-    "plan_50": {"price": 50, "credits": 50, "label": "₹50 for 50 Credits"},
-    "plan_100": {"price": 100, "credits": 120, "label": "₹100 for 120 Credits"},
-    "plan_200": {"price": 200, "credits": 260, "label": "₹200 for 260 Credits"},
-    "plan_500": {"price": 500, "credits": 700, "label": "₹500 for 700 Credits"},
-    "plan_1000": {"price": 1000, "credits": 1500, "label": "₹1000 for 1500 Credits"},
+    "plan_19": {"price": 19, "credits": 30, "label": "💰 ₹19 → 30 Credits"},
+    "plan_39": {"price": 39, "credits": 70, "label": "💰 ₹39 → 70 Credits"},
+    "plan_69": {"price": 69, "credits": 150, "label": "💰 ₹69 → 150 Credits"},
+    "plan_129": {"price": 129, "credits": 350, "label": "💰 ₹129 → 350 Credits"},
+    "plan_199": {"price": 199, "credits": 700, "label": "💰 ₹199 → 700 Credits"},
+    "plan_399": {"price": 399, "credits": 1800, "label": "💰 ₹399 → 1800 Credits"},
 }
 
 # Unlimited plan duration options (in hours/days)
 UNLIMITED_PLANS = {
-    "6h": {"duration_hours": 6, "price": 19, "label": "💰 ₹19 → 6 Hours Unlimited", "duration_text": "6 hours"},
-    "12h": {"duration_hours": 12, "price": 39, "label": "💰 ₹39 → 12 Hours Unlimited", "duration_text": "12 hours"},
-    "1d": {"duration_hours": 24, "price": 69, "label": "💰 ₹69 → 1 Day Unlimited", "duration_text": "1 day"},
-    "3d": {"duration_hours": 72, "price": 149, "label": "💰 ₹149 → 3 Days Unlimited", "duration_text": "3 days"},
-    "7d": {"duration_hours": 168, "price": 299, "label": "💰 ₹299 → 7 Days Unlimited", "duration_text": "7 days"},
-    "15d": {"duration_hours": 360, "price": 599, "label": "💰 ₹599 → 15 Days Unlimited", "duration_text": "15 days"},
+    "2h": {"duration_hours": 2, "price": 39, "label": "🏅 ₹39 → 2 Hours Unlimited", "duration_text": "2 hours"},
+    "6h": {"duration_hours": 6, "price": 69, "label": "🏅 ₹69 → 6 Hours Unlimited", "duration_text": "6 hours"},
+    "12h": {"duration_hours": 12, "price": 129, "label": "🏅 ₹129 → 12 Hours Unlimited", "duration_text": "12 hours"},
+    "1d": {"duration_hours": 24, "price": 199, "label": "🏅 ₹199 → 1 Day Unlimited", "duration_text": "1 day"},
+    "3d": {"duration_hours": 72, "price": 399, "label": "🏅 ₹399 → 3 Days Unlimited", "duration_text": "3 days"},
+    "7d": {"duration_hours": 168, "price": 799, "label": "🏅 ₹799 → 7 Days Unlimited", "duration_text": "7 days"},
+    "15d": {"duration_hours": 360, "price": 1499, "label": "🏅 ₹1499 → 15 Days Unlimited", "duration_text": "15 days"},
 }
 
 pending_sessions: Dict[str, Dict] = {}
