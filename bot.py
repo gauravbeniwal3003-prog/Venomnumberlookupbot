@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 # ============= ENVIRONMENT SECURED CONFIGURATION =============
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "7526906483:AAG7KGrVqSxkGjP7FJf-uvCEfzbHE5qkYHs")
-ADMIN_USER_ID = 7850023357  
+ADMIN_USER_ID = 8981634835  
 
 # Supabase Storage Core Configurations
 SUPABASE_URL = "https://gclwzfkxneiwzagbkwkx.supabase.co"
@@ -122,10 +122,23 @@ def check_mode() -> str:
     try:
         response = supabase.table("settings").select("mode").eq("key", "maintenance_mode").execute()
         if response.data and len(response.data) > 0:
-            mode = response.data[0].get("mode", "paid")
-            return mode if mode in ['free', 'paid'] else 'paid'
+            mode = response.data[0].get("mode")
+            if mode in ['free', 'paid']:
+                return mode
         return 'paid'
-    except:
+    except Exception as e:
+        logger.error(f"Check mode error: {e}")
+        return 'paid'
+
+def toggle_mode() -> str:
+    """Toggle between free and paid mode, returns new mode"""
+    try:
+        current = check_mode()
+        new_mode = 'free' if current == 'paid' else 'paid'
+        supabase.table("settings").update({"mode": new_mode}).eq("key", "maintenance_mode").execute()
+        return new_mode
+    except Exception as e:
+        logger.error(f"Toggle mode error: {e}")
         return 'paid'
 
 def is_unlimited_active(user_id: int) -> tuple:
@@ -481,7 +494,8 @@ def handle_message(update: Update, context: CallbackContext):
     
     elif "Admin Panel" in text:
         if is_admin(user_id):
-            mode_display = "🔓 FREE" if check_mode() == 'free' else "🔒 PAID"
+            mode = check_mode()
+            mode_display = "🔓 FREE" if mode == 'free' else "🔒 PAID"
             update.message.reply_text(f"🔐 Admin Panel\n\nCurrent Mode: {mode_display}", reply_markup=get_admin_keyboard())
         else:
             update.message.reply_text("❌ Access denied.")
@@ -738,8 +752,7 @@ def handle_callback(update: Update, context: CallbackContext):
         mode = check_mode()
         if mode == 'free':
             query.message.edit_text("🎉 *FREE MODE ACTIVE*\n\nNo unlimited plans needed! All features are free.", parse_mode='Markdown')
-            return
-        query.message.edit_text("🌟 *Unlimited Plans:*", parse_mode='Markdown', reply_markup=get_unlimited_plans_keyboard())
+            return        query.message.edit_text("🌟 *Unlimited Plans:*", parse_mode='Markdown', reply_markup=get_unlimited_plans_keyboard())
         return
     
     if action == "back_to_purchase":
@@ -755,14 +768,35 @@ def handle_callback(update: Update, context: CallbackContext):
         if action == "adm_toggle_maint":
             current = check_maintenance()
             new_state = not current
-            supabase.table("settings").upsert({"key": "maintenance_mode", "value": str(new_state).lower()}).execute()
-            query.message.reply_text(f"✅ Maintenance: {new_state}")
+            supabase.table("settings").update({"value": str(new_state).lower()}).eq("key", "maintenance_mode").execute()
+            query.message.reply_text(f"✅ Maintenance mode changed to: {new_state}")
         
         elif action == "adm_toggle_mode":
             current = check_mode()
             new_mode = 'free' if current == 'paid' else 'paid'
-            supabase.table("settings").upsert({"key": "maintenance_mode", "mode": new_mode}).execute()
-            query.message.reply_text(f"✅ Mode changed to: {'🔓 FREE' if new_mode == 'free' else '🔒 PAID'}\n\nFree Mode: All features free\nPaid Mode: Credit/Unlimited system active")
+            
+            # Update mode in database
+            try:
+                supabase.table("settings").update({"mode": new_mode}).eq("key", "maintenance_mode").execute()
+                
+                # Send notification to admin
+                if new_mode == 'free':
+                    notification = "🔄 *Mode Changed to FREE Mode* 🔓\n\n✅ All features are now FREE for all users!\n❌ No credits or unlimited plans required.\n💰 All payment options are disabled."
+                else:
+                    notification = "🔄 *Mode Changed to PAID Mode* 🔒\n\n✅ Credit and Unlimited plans are now ACTIVE!\n💰 Users can buy credits and unlimited plans.\n📊 Normal credit deduction system is running."
+                
+                query.message.reply_text(notification, parse_mode='Markdown')
+                
+                # Also send notification to all users (broadcast)
+                broadcast_msg = f"📢 *System Update*\n\n{notification}"
+                try:
+                    broadcast_to_all_users(broadcast_msg, context)
+                except:
+                    pass
+                    
+            except Exception as e:
+                logger.error(f"Toggle mode error: {e}")
+                query.message.reply_text("❌ Failed to change mode. Please try again.")
         
         elif action == "adm_search_user":
             context.user_data['admin_state'] = 'search_user'
