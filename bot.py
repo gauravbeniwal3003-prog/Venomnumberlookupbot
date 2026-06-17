@@ -125,7 +125,6 @@ def get_mode() -> str:
             mode = response.data[0].get("mode")
             if mode in ['free', 'paid']:
                 return mode
-        # If no mode found, set default to paid
         set_mode('paid')
         return 'paid'
     except Exception as e:
@@ -137,12 +136,10 @@ def set_mode(mode: str) -> bool:
     try:
         if mode not in ['free', 'paid']:
             return False
-        # Check if settings row exists
         check = supabase.table("settings").select("key").eq("key", "maintenance_mode").execute()
         if check.data and len(check.data) > 0:
             supabase.table("settings").update({"mode": mode}).eq("key", "maintenance_mode").execute()
         else:
-            # If no settings row, create one
             supabase.table("settings").insert({"key": "maintenance_mode", "value": "false", "mode": mode}).execute()
         logger.info(f"Mode set to: {mode}")
         return True
@@ -337,24 +334,47 @@ def get_unlimited_plans_keyboard():
     return InlineKeyboardMarkup(buttons)
 
 def get_admin_keyboard():
-    # Get current mode for display
+    # Get current status for display
     current_mode = get_mode()
     mode_emoji = "🔓" if current_mode == 'free' else "🔒"
     mode_text = "FREE" if current_mode == 'free' else "PAID"
     
-    # Create the keyboard with the mode switch as the FIRST button
+    maint_status = "ON" if check_maintenance() else "OFF"
+    maint_emoji = "🔴" if check_maintenance() else "🟢"
+    
     layout = [
-        [InlineKeyboardButton(f"🔄 Mode: {mode_emoji} {mode_text}", callback_data="adm_toggle_mode")],
-        [InlineKeyboardButton("🔧 Toggle Maintenance", callback_data="adm_toggle_maint")],
+        [InlineKeyboardButton("⚙️ Settings", callback_data="adm_settings")],
         [InlineKeyboardButton("👤 Search User", callback_data="adm_search_user")],
         [InlineKeyboardButton("💳 Add/Remove Credits", callback_data="adm_modify_credits")],
         [InlineKeyboardButton("🌟 Activate Unlimited", callback_data="adm_activate_unlimited")],
         [InlineKeyboardButton("❌ Deactivate Unlimited", callback_data="adm_deactivate_unlimited")],
-        [InlineKeyboardButton("🚫 Ban User", callback_data="adm_ban_user")],
-        [InlineKeyboardButton("✅ Unban User", callback_data="adm_unban_user")],
+        [InlineKeyboardButton("🚫 Ban/Unban User", callback_data="adm_ban_unban")],
         [InlineKeyboardButton("🎁 Giveaway (All Users)", callback_data="adm_giveaway_all")],
         [InlineKeyboardButton("📢 Broadcast Message", callback_data="adm_broadcast")],
         [InlineKeyboardButton("❌ Close", callback_data="admin_close")]
+    ]
+    return InlineKeyboardMarkup(layout)
+
+def get_settings_keyboard():
+    current_mode = get_mode()
+    mode_emoji = "🔓" if current_mode == 'free' else "🔒"
+    mode_text = "FREE" if current_mode == 'free' else "PAID"
+    
+    maint_status = "ON" if check_maintenance() else "OFF"
+    maint_emoji = "🔴" if check_maintenance() else "🟢"
+    
+    layout = [
+        [InlineKeyboardButton(f"🔄 Mode: {mode_emoji} {mode_text}", callback_data="adm_toggle_mode")],
+        [InlineKeyboardButton(f"🔧 Maintenance: {maint_emoji} {maint_status}", callback_data="adm_toggle_maint")],
+        [InlineKeyboardButton("◀️ Back to Admin", callback_data="adm_back")]
+    ]
+    return InlineKeyboardMarkup(layout)
+
+def get_ban_unban_keyboard():
+    layout = [
+        [InlineKeyboardButton("🚫 Ban User", callback_data="adm_ban_user")],
+        [InlineKeyboardButton("✅ Unban User", callback_data="adm_unban_user")],
+        [InlineKeyboardButton("◀️ Back to Admin", callback_data="adm_back")]
     ]
     return InlineKeyboardMarkup(layout)
 
@@ -378,7 +398,6 @@ def start(update: Update, context: CallbackContext):
         update.message.reply_text("❌ You are banned from using this bot. Contact admin for support.")
         return
     
-    # Check if in free mode
     mode = get_mode()
     if mode == 'free':
         welcome = f"""
@@ -425,7 +444,6 @@ def handle_message(update: Update, context: CallbackContext):
         update.message.reply_text("🔧 Under maintenance. Try later.")
         return
     
-    # Get current mode
     mode = get_mode()
     
     if context.user_data.get('awaiting_lookup'):
@@ -509,8 +527,6 @@ def handle_message(update: Update, context: CallbackContext):
     
     elif "Admin Panel" in text:
         if is_admin(user_id):
-            # Log to verify admin is opening panel
-            logger.info(f"Admin {user_id} opened admin panel")
             update.message.reply_text("🔐 Admin Panel:", reply_markup=get_admin_keyboard())
         else:
             update.message.reply_text("❌ Access denied.")
@@ -573,14 +589,12 @@ def execute_lookup(update: Update, context: CallbackContext, number: str):
     mode = get_mode()
     
     if mode == 'free':
-        # Free mode - no credit deduction
         profile = sync_account(user_id)
         supabase.table("users").update({"total_lookups_done": profile.get('total_lookups_done', 0) + 1}).eq("telegram_id", user_id).execute()
         cost_msg = "0 Credits (FREE MODE)"
         unlimited_active = False
         remaining = 0
     else:
-        # Paid mode - normal credit deduction
         profile = sync_account(user_id)
         unlimited_active, _, remaining = is_unlimited_active(user_id)
         
@@ -676,7 +690,6 @@ def handle_callback(update: Update, context: CallbackContext):
             process_payment_approval(update, context, session_id, False)
         return
     
-    # Get current mode for purchase checks
     mode = get_mode()
     
     # Credit plans
@@ -780,13 +793,24 @@ def handle_callback(update: Update, context: CallbackContext):
         query.message.delete()
         return
     
-    # Admin actions
+    # Admin navigation
     if is_admin(user_id):
+        if action == "adm_settings":
+            query.message.edit_text("⚙️ *Settings Menu*\n\nCurrent Status:", parse_mode='Markdown', reply_markup=get_settings_keyboard())
+            return
+        
+        if action == "adm_back":
+            query.message.edit_text("🔐 Admin Panel:", reply_markup=get_admin_keyboard())
+            return
+        
+        if action == "adm_ban_unban":
+            query.message.edit_text("🚫 *Ban/Unban User*\n\nSelect option:", parse_mode='Markdown', reply_markup=get_ban_unban_keyboard())
+            return
+        
         if action == "adm_toggle_mode":
             current = get_mode()
             new_mode = 'free' if current == 'paid' else 'paid'
             
-            # Update mode in database
             success = set_mode(new_mode)
             
             if success:
@@ -798,57 +822,71 @@ def handle_callback(update: Update, context: CallbackContext):
                 else:
                     notification = f"🔄 *Mode Changed to PAID Mode* {mode_emoji}\n\n✅ Credit and Unlimited plans are now ACTIVE!\n💰 Users can buy credits and unlimited plans.\n📊 Normal credit deduction system is running."
                 
-                # Send notification to admin
                 query.message.reply_text(notification, parse_mode='Markdown')
                 
-                # Also send notification to all users
                 broadcast_msg = f"📢 *System Update*\n\n{notification}"
                 try:
                     broadcast_to_all_users(broadcast_msg, context)
                 except:
                     pass
                 
-                # Send updated admin panel
-                query.message.reply_text("🔐 Admin Panel (Updated):", reply_markup=get_admin_keyboard())
+                # Update settings menu
+                query.message.reply_text("⚙️ *Settings Menu (Updated)*\n\nCurrent Status:", parse_mode='Markdown', reply_markup=get_settings_keyboard())
             else:
                 query.message.reply_text("❌ Failed to change mode. Please try again.")
+            return
         
-        elif action == "adm_toggle_maint":
+        if action == "adm_toggle_maint":
             current = check_maintenance()
             new_state = not current
             supabase.table("settings").update({"value": str(new_state).lower()}).eq("key", "maintenance_mode").execute()
-            query.message.reply_text(f"✅ Maintenance mode changed to: {new_state}")
+            
+            maint_status = "ON" if new_state else "OFF"
+            maint_emoji = "🔴" if new_state else "🟢"
+            query.message.reply_text(f"✅ Maintenance mode changed to: {new_state}\nStatus: {maint_emoji} {maint_status}")
+            
+            # Update settings menu
+            query.message.reply_text("⚙️ *Settings Menu (Updated)*\n\nCurrent Status:", parse_mode='Markdown', reply_markup=get_settings_keyboard())
+            return
         
-        elif action == "adm_search_user":
+        if action == "adm_search_user":
             context.user_data['admin_state'] = 'search_user'
             query.message.reply_text("Send user ID or @username:")
+            return
         
-        elif action == "adm_modify_credits":
+        if action == "adm_modify_credits":
             context.user_data['admin_state'] = 'modify_credits'
             query.message.reply_text("Format: `USER_ID AMOUNT`\nExample: `123456789 100`\nUse negative to deduct: `123456789 -50`", parse_mode='Markdown')
+            return
         
-        elif action == "adm_activate_unlimited":
+        if action == "adm_activate_unlimited":
             query.message.reply_text("🌟 *Select Unlimited Plan Duration:*", parse_mode='Markdown', reply_markup=get_unlimited_duration_keyboard())
+            return
         
-        elif action == "adm_deactivate_unlimited":
+        if action == "adm_deactivate_unlimited":
             context.user_data['admin_state'] = 'deactivate_unlimited'
             query.message.reply_text("Send username or user ID to DEACTIVATE unlimited plan:\n\nFormat: `@username` or `123456789`", parse_mode='Markdown')
+            return
         
-        elif action == "adm_ban_user":
+        if action == "adm_ban_user":
             context.user_data['admin_state'] = 'ban_user'
             query.message.reply_text("🚫 *Ban User*\n\nSend username or user ID to ban:\n\nFormat: `@username` or `123456789`", parse_mode='Markdown')
+            return
         
-        elif action == "adm_unban_user":
+        if action == "adm_unban_user":
             context.user_data['admin_state'] = 'unban_user'
             query.message.reply_text("✅ *Unban User*\n\nSend username or user ID to unban:\n\nFormat: `@username` or `123456789`", parse_mode='Markdown')
+            return
         
-        elif action == "adm_giveaway_all":
+        if action == "adm_giveaway_all":
             context.user_data['admin_state'] = 'giveaway_all'
             query.message.reply_text("🎁 Send credit amount for ALL users:\nExample: `50`\n(Only non-banned users will receive)", parse_mode='Markdown')
+            return
         
-        elif action == "adm_broadcast":
+        if action == "adm_broadcast":
             context.user_data['admin_state'] = 'broadcast'
             query.message.reply_text("📢 Send message to broadcast to ALL users:\n(Only non-banned users will receive)", parse_mode='Markdown')
+            return
 
 def handle_receipt_upload(update: Update, context: CallbackContext):
     session_id = context.user_data.get('payment_session')
@@ -911,7 +949,6 @@ def process_payment_approval(update: Update, context: CallbackContext, session_i
                 pending_sessions.pop(session_id, None)
                 return
         else:
-            # UNLIMITED PLAN ACTIVATION
             duration_hours = session['duration_hours']
             duration_text = session.get('duration_text', f"{duration_hours} hours")
             
@@ -921,7 +958,6 @@ def process_payment_approval(update: Update, context: CallbackContext, session_i
             else:
                 display_text = duration_text
             
-            # Activate the unlimited plan
             success = activate_unlimited_plan(target_user, duration_hours)
             
             if success:
@@ -956,7 +992,6 @@ def process_payment_approval(update: Update, context: CallbackContext, session_i
             logger.error(f"Failed to notify user: {e}")
         query.message.edit_text(f"❌ Payment declined for user {target_user}")
     
-    # Remove session after successful processing
     pending_sessions.pop(session_id, None)
 
 def process_admin_input(update: Update, context: CallbackContext):
