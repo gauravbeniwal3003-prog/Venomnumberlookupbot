@@ -125,7 +125,9 @@ def get_mode() -> str:
             mode = response.data[0].get("mode")
             if mode in ['free', 'paid']:
                 return mode
-        return 'paid'  # Default to paid
+        # If no mode found, set default to paid
+        set_mode('paid')
+        return 'paid'
     except Exception as e:
         logger.error(f"Get mode error: {e}")
         return 'paid'
@@ -135,7 +137,14 @@ def set_mode(mode: str) -> bool:
     try:
         if mode not in ['free', 'paid']:
             return False
-        supabase.table("settings").update({"mode": mode}).eq("key", "maintenance_mode").execute()
+        # Check if settings row exists
+        check = supabase.table("settings").select("key").eq("key", "maintenance_mode").execute()
+        if check.data and len(check.data) > 0:
+            supabase.table("settings").update({"mode": mode}).eq("key", "maintenance_mode").execute()
+        else:
+            # If no settings row, create one
+            supabase.table("settings").insert({"key": "maintenance_mode", "value": "false", "mode": mode}).execute()
+        logger.info(f"Mode set to: {mode}")
         return True
     except Exception as e:
         logger.error(f"Set mode error: {e}")
@@ -328,9 +337,14 @@ def get_unlimited_plans_keyboard():
     return InlineKeyboardMarkup(buttons)
 
 def get_admin_keyboard():
+    # Get current mode for display
+    current_mode = get_mode()
+    mode_emoji = "🔓" if current_mode == 'free' else "🔒"
+    mode_text = "FREE" if current_mode == 'free' else "PAID"
+    
     layout = [
+        [InlineKeyboardButton(f"🔄 Mode: {mode_emoji} {mode_text}", callback_data="adm_toggle_mode")],
         [InlineKeyboardButton("🔧 Toggle Maintenance", callback_data="adm_toggle_maint")],
-        [InlineKeyboardButton("🔄 Toggle Free/Paid Mode", callback_data="adm_toggle_mode")],
         [InlineKeyboardButton("👤 Search User", callback_data="adm_search_user")],
         [InlineKeyboardButton("💳 Add/Remove Credits", callback_data="adm_modify_credits")],
         [InlineKeyboardButton("🌟 Activate Unlimited", callback_data="adm_activate_unlimited")],
@@ -423,7 +437,6 @@ def handle_message(update: Update, context: CallbackContext):
     
     if "Number Lookup" in text:
         if mode == 'free':
-            # Free mode - no credit check needed
             context.user_data['awaiting_lookup'] = True
             update.message.reply_text("📱 Enter 10-digit number:")
         else:
@@ -495,9 +508,7 @@ def handle_message(update: Update, context: CallbackContext):
     
     elif "Admin Panel" in text:
         if is_admin(user_id):
-            mode = get_mode()
-            mode_display = "🔓 FREE" if mode == 'free' else "🔒 PAID"
-            update.message.reply_text(f"🔐 Admin Panel\n\nCurrent Mode: {mode_display}", reply_markup=get_admin_keyboard())
+            update.message.reply_text("🔐 Admin Panel:", reply_markup=get_admin_keyboard())
         else:
             update.message.reply_text("❌ Access denied.")
     
@@ -559,7 +570,7 @@ def execute_lookup(update: Update, context: CallbackContext, number: str):
     mode = get_mode()
     
     if mode == 'free':
-        # Free mode - no credit deduction, just count
+        # Free mode - no credit deduction
         profile = sync_account(user_id)
         supabase.table("users").update({"total_lookups_done": profile.get('total_lookups_done', 0) + 1}).eq("telegram_id", user_id).execute()
         cost_msg = "0 Credits (FREE MODE)"
@@ -768,13 +779,7 @@ def handle_callback(update: Update, context: CallbackContext):
     
     # Admin actions
     if is_admin(user_id):
-        if action == "adm_toggle_maint":
-            current = check_maintenance()
-            new_state = not current
-            supabase.table("settings").update({"value": str(new_state).lower()}).eq("key", "maintenance_mode").execute()
-            query.message.reply_text(f"✅ Maintenance mode changed to: {new_state}")
-        
-        elif action == "adm_toggle_mode":
+        if action == "adm_toggle_mode":
             current = get_mode()
             new_mode = 'free' if current == 'paid' else 'paid'
             
@@ -782,12 +787,16 @@ def handle_callback(update: Update, context: CallbackContext):
             success = set_mode(new_mode)
             
             if success:
-                # Send notification to admin
-                if new_mode == 'free':
-                    notification = "🔄 *Mode Changed to FREE Mode* 🔓\n\n✅ All features are now FREE for all users!\n❌ No credits or unlimited plans required.\n💰 All payment options are disabled."
-                else:
-                    notification = "🔄 *Mode Changed to PAID Mode* 🔒\n\n✅ Credit and Unlimited plans are now ACTIVE!\n💰 Users can buy credits and unlimited plans.\n📊 Normal credit deduction system is running."
+                # Update the admin panel message
+                mode_emoji = "🔓" if new_mode == 'free' else "🔒"
+                mode_text = "FREE" if new_mode == 'free' else "PAID"
                 
+                if new_mode == 'free':
+                    notification = f"🔄 *Mode Changed to FREE Mode* {mode_emoji}\n\n✅ All features are now FREE for all users!\n❌ No credits or unlimited plans required.\n💰 All payment options are disabled."
+                else:
+                    notification = f"🔄 *Mode Changed to PAID Mode* {mode_emoji}\n\n✅ Credit and Unlimited plans are now ACTIVE!\n💰 Users can buy credits and unlimited plans.\n📊 Normal credit deduction system is running."
+                
+                # Edit the callback message
                 query.message.reply_text(notification, parse_mode='Markdown')
                 
                 # Also send notification to all users
@@ -796,8 +805,17 @@ def handle_callback(update: Update, context: CallbackContext):
                     broadcast_to_all_users(broadcast_msg, context)
                 except:
                     pass
+                
+                # Update the admin keyboard
+                query.message.reply_text("🔐 Admin Panel (Updated):", reply_markup=get_admin_keyboard())
             else:
                 query.message.reply_text("❌ Failed to change mode. Please try again.")
+        
+        elif action == "adm_toggle_maint":
+            current = check_maintenance()
+            new_state = not current
+            supabase.table("settings").update({"value": str(new_state).lower()}).eq("key", "maintenance_mode").execute()
+            query.message.reply_text(f"✅ Maintenance mode changed to: {new_state}")
         
         elif action == "adm_search_user":
             context.user_data['admin_state'] = 'search_user'
