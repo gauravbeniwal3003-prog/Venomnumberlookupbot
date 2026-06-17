@@ -117,6 +117,30 @@ def check_maintenance() -> bool:
     except:
         return False
 
+def get_mode() -> str:
+    """Get current mode from database"""
+    try:
+        response = supabase.table("settings").select("mode").eq("key", "maintenance_mode").execute()
+        if response.data and len(response.data) > 0:
+            mode = response.data[0].get("mode")
+            if mode in ['free', 'paid']:
+                return mode
+        return 'paid'  # Default to paid
+    except Exception as e:
+        logger.error(f"Get mode error: {e}")
+        return 'paid'
+
+def set_mode(mode: str) -> bool:
+    """Set mode in database"""
+    try:
+        if mode not in ['free', 'paid']:
+            return False
+        supabase.table("settings").update({"mode": mode}).eq("key", "maintenance_mode").execute()
+        return True
+    except Exception as e:
+        logger.error(f"Set mode error: {e}")
+        return False
+
 def is_unlimited_active(user_id: int) -> tuple:
     try:
         response = supabase.table("users").select("unlimited_expiry").eq("telegram_id", user_id).execute()
@@ -306,6 +330,7 @@ def get_unlimited_plans_keyboard():
 def get_admin_keyboard():
     layout = [
         [InlineKeyboardButton("🔧 Toggle Maintenance", callback_data="adm_toggle_maint")],
+        [InlineKeyboardButton("🔄 Toggle Free/Paid Mode", callback_data="adm_toggle_mode")],
         [InlineKeyboardButton("👤 Search User", callback_data="adm_search_user")],
         [InlineKeyboardButton("💳 Add/Remove Credits", callback_data="adm_modify_credits")],
         [InlineKeyboardButton("🌟 Activate Unlimited", callback_data="adm_activate_unlimited")],
@@ -338,7 +363,20 @@ def start(update: Update, context: CallbackContext):
         update.message.reply_text("❌ You are banned from using this bot. Contact admin for support.")
         return
     
-    welcome = f"""
+    # Check if in free mode
+    mode = get_mode()
+    if mode == 'free':
+        welcome = f"""
+✅ *Welcome to FREE Mode!* 🎉
+
+🎯 All features are FREE!
+📞 Unlimited Number Lookups
+📊 No credits needed
+
+Enjoy! 🚀
+    """
+    else:
+        welcome = f"""
 ✅ *Welcome!*
 
 🎁 New users get 1 FREE lookup!
@@ -372,6 +410,9 @@ def handle_message(update: Update, context: CallbackContext):
         update.message.reply_text("🔧 Under maintenance. Try later.")
         return
     
+    # Get current mode
+    mode = get_mode()
+    
     if context.user_data.get('awaiting_lookup'):
         if text.isdigit() and len(text) == 10:
             context.user_data['awaiting_lookup'] = False
@@ -381,26 +422,48 @@ def handle_message(update: Update, context: CallbackContext):
         return
     
     if "Number Lookup" in text:
-        profile = sync_account(user_id)
-        unlimited_active, _, remaining = is_unlimited_active(user_id)
-        
-        if not is_admin(user_id) and not unlimited_active and profile.get('credits', 0) < CREDIT_COST_PER_LOOKUP:
-            update.message.reply_text(f"⚠️ Need {CREDIT_COST_PER_LOOKUP} credits.\nBalance: {profile.get('credits', 0)}\n\nBuy credits or unlimited plan!")
-            return
-        context.user_data['awaiting_lookup'] = True
-        update.message.reply_text("📱 Enter 10-digit number:")
+        if mode == 'free':
+            # Free mode - no credit check needed
+            context.user_data['awaiting_lookup'] = True
+            update.message.reply_text("📱 Enter 10-digit number:")
+        else:
+            profile = sync_account(user_id)
+            unlimited_active, _, remaining = is_unlimited_active(user_id)
+            
+            if not is_admin(user_id) and not unlimited_active and profile.get('credits', 0) < CREDIT_COST_PER_LOOKUP:
+                update.message.reply_text(f"⚠️ Need {CREDIT_COST_PER_LOOKUP} credits.\nBalance: {profile.get('credits', 0)}\n\nBuy credits or unlimited plan!")
+                return
+            context.user_data['awaiting_lookup'] = True
+            update.message.reply_text("📱 Enter 10-digit number:")
     
     elif "Buy Credits" in text:
-        update.message.reply_text("Select plan type:", reply_markup=get_purchase_keyboard())
+        if mode == 'free':
+            update.message.reply_text("🎉 *FREE MODE ACTIVE*\n\nYou don't need to buy credits!\nAll features are free to use.\n\nJust use 📞 Number Lookup!", parse_mode='Markdown')
+        else:
+            update.message.reply_text("Select plan type:", reply_markup=get_purchase_keyboard())
     
     elif "Buy Unlimited" in text:
-        update.message.reply_text("Select plan type:", reply_markup=get_purchase_keyboard())
+        if mode == 'free':
+            update.message.reply_text("🎉 *FREE MODE ACTIVE*\n\nYou don't need unlimited plans!\nAll features are free to use.\n\nJust use 📞 Number Lookup!", parse_mode='Markdown')
+        else:
+            update.message.reply_text("Select plan type:", reply_markup=get_purchase_keyboard())
     
     elif "My Plan" in text:
         profile = sync_account(user_id)
         unlimited_active, expiry, remaining = is_unlimited_active(user_id)
+        mode = get_mode()
         
-        if unlimited_active:
+        if mode == 'free':
+            msg = f"""
+⭐ *FREE MODE* ⭐
+━━━━━━━━━━━━━━━━━━━━━
+🎉 All features are FREE!
+📞 Unlimited Number Lookups
+💳 No credits needed
+━━━━━━━━━━━━━━━━━━━━━
+📊 Total lookups: {profile.get('total_lookups_done', 0)}
+            """
+        elif unlimited_active:
             expiry_str = expiry.strftime('%Y-%m-%d %H:%M')
             msg = f"""
 ⭐ *YOUR PLAN*
@@ -432,7 +495,9 @@ def handle_message(update: Update, context: CallbackContext):
     
     elif "Admin Panel" in text:
         if is_admin(user_id):
-            update.message.reply_text("🔐 Admin Panel:", reply_markup=get_admin_keyboard())
+            mode = get_mode()
+            mode_display = "🔓 FREE" if mode == 'free' else "🔒 PAID"
+            update.message.reply_text(f"🔐 Admin Panel\n\nCurrent Mode: {mode_display}", reply_markup=get_admin_keyboard())
         else:
             update.message.reply_text("❌ Access denied.")
     
@@ -491,12 +556,35 @@ def forward_support_reply(update: Update, context: CallbackContext):
 
 def execute_lookup(update: Update, context: CallbackContext, number: str):
     user_id = update.effective_user.id
-    profile = sync_account(user_id)
-    unlimited_active, _, remaining = is_unlimited_active(user_id)
+    mode = get_mode()
     
-    if not is_admin(user_id) and not unlimited_active and profile.get('credits', 0) < CREDIT_COST_PER_LOOKUP:
-        update.message.reply_text("⚠️ Insufficient balance!")
-        return
+    if mode == 'free':
+        # Free mode - no credit deduction, just count
+        profile = sync_account(user_id)
+        supabase.table("users").update({"total_lookups_done": profile.get('total_lookups_done', 0) + 1}).eq("telegram_id", user_id).execute()
+        cost_msg = "0 Credits (FREE MODE)"
+        unlimited_active = False
+        remaining = 0
+    else:
+        # Paid mode - normal credit deduction
+        profile = sync_account(user_id)
+        unlimited_active, _, remaining = is_unlimited_active(user_id)
+        
+        if not is_admin(user_id) and not unlimited_active and profile.get('credits', 0) < CREDIT_COST_PER_LOOKUP:
+            update.message.reply_text("⚠️ Insufficient balance!")
+            return
+        
+        if not is_admin(user_id) and not unlimited_active:
+            modify_credits(user_id, -CREDIT_COST_PER_LOOKUP)
+        
+        supabase.table("users").update({"total_lookups_done": profile.get('total_lookups_done', 0) + 1}).eq("telegram_id", user_id).execute()
+        
+        if unlimited_active:
+            cost_msg = f"0 Credits (Unlimited - {remaining}h left)"
+        elif is_admin(user_id):
+            cost_msg = "0 Credits (Admin)"
+        else:
+            cost_msg = f"{CREDIT_COST_PER_LOOKUP} Credits"
     
     msg = update.message.reply_text("🔍 Searching...")
     
@@ -510,15 +598,10 @@ def execute_lookup(update: Update, context: CallbackContext, number: str):
                 return
             
             if data.get('success') and data.get('results_found', 0) > 0:
-                if not is_admin(user_id) and not unlimited_active:
-                    modify_credits(user_id, -CREDIT_COST_PER_LOOKUP)
-                
-                supabase.table("users").update({"total_lookups_done": profile.get('total_lookups_done', 0) + 1}).eq("telegram_id", user_id).execute()
-                
                 records = data.get('results', {})
                 total = data.get('results_found', 0)
                 
-                result = f"📱 *Number:* `{number}`\n📊 *Found:* {total}\n━━━━━━━━━━━━━━━━━━━━━\n\n"
+                result = f"📱 *Number:* `{number}`\n📊 *Found:* {total}\n💸 *Cost:* {cost_msg}\n━━━━━━━━━━━━━━━━━━━━━\n\n"
                 
                 for i in range(1, min(total + 1, 5)):
                     key = f"Result {i}"
@@ -579,8 +662,15 @@ def handle_callback(update: Update, context: CallbackContext):
             process_payment_approval(update, context, session_id, False)
         return
     
+    # Get current mode for purchase checks
+    mode = get_mode()
+    
     # Credit plans
     if action.startswith("credit_"):
+        if mode == 'free':
+            query.message.reply_text("🎉 *FREE MODE ACTIVE*\n\nYou don't need to buy credits!\nAll features are free.", parse_mode='Markdown')
+            return
+            
         plan_key = action.replace("credit_", "")
         if plan_key in CREDIT_PLANS:
             plan = CREDIT_PLANS[plan_key]
@@ -610,6 +700,10 @@ def handle_callback(update: Update, context: CallbackContext):
     
     # Unlimited plans
     if action.startswith("unlimited_"):
+        if mode == 'free':
+            query.message.reply_text("🎉 *FREE MODE ACTIVE*\n\nYou don't need unlimited plans!\nAll features are free.", parse_mode='Markdown')
+            return
+            
         plan_key = action.replace("unlimited_", "")
         if plan_key in UNLIMITED_PLANS:
             plan = UNLIMITED_PLANS[plan_key]
@@ -651,10 +745,16 @@ def handle_callback(update: Update, context: CallbackContext):
     
     # Navigation
     if action == "show_credit_plans":
+        if mode == 'free':
+            query.message.edit_text("🎉 *FREE MODE ACTIVE*\n\nNo credits needed! All features are free.", parse_mode='Markdown')
+            return
         query.message.edit_text("💳 *Credit Plans:*", parse_mode='Markdown', reply_markup=get_credit_plans_keyboard())
         return
     
     if action == "show_unlimited_plans":
+        if mode == 'free':
+            query.message.edit_text("🎉 *FREE MODE ACTIVE*\n\nNo unlimited plans needed! All features are free.", parse_mode='Markdown')
+            return
         query.message.edit_text("🌟 *Unlimited Plans:*", parse_mode='Markdown', reply_markup=get_unlimited_plans_keyboard())
         return
     
@@ -671,8 +771,33 @@ def handle_callback(update: Update, context: CallbackContext):
         if action == "adm_toggle_maint":
             current = check_maintenance()
             new_state = not current
-            supabase.table("settings").upsert({"key": "maintenance_mode", "value": str(new_state).lower()}).execute()
-            query.message.reply_text(f"✅ Maintenance: {new_state}")
+            supabase.table("settings").update({"value": str(new_state).lower()}).eq("key", "maintenance_mode").execute()
+            query.message.reply_text(f"✅ Maintenance mode changed to: {new_state}")
+        
+        elif action == "adm_toggle_mode":
+            current = get_mode()
+            new_mode = 'free' if current == 'paid' else 'paid'
+            
+            # Update mode in database
+            success = set_mode(new_mode)
+            
+            if success:
+                # Send notification to admin
+                if new_mode == 'free':
+                    notification = "🔄 *Mode Changed to FREE Mode* 🔓\n\n✅ All features are now FREE for all users!\n❌ No credits or unlimited plans required.\n💰 All payment options are disabled."
+                else:
+                    notification = "🔄 *Mode Changed to PAID Mode* 🔒\n\n✅ Credit and Unlimited plans are now ACTIVE!\n💰 Users can buy credits and unlimited plans.\n📊 Normal credit deduction system is running."
+                
+                query.message.reply_text(notification, parse_mode='Markdown')
+                
+                # Also send notification to all users
+                broadcast_msg = f"📢 *System Update*\n\n{notification}"
+                try:
+                    broadcast_to_all_users(broadcast_msg, context)
+                except:
+                    pass
+            else:
+                query.message.reply_text("❌ Failed to change mode. Please try again.")
         
         elif action == "adm_search_user":
             context.user_data['admin_state'] = 'search_user'
