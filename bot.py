@@ -342,6 +342,7 @@ def get_admin_keyboard():
     mode_emoji = "🔓" if current_mode == 'free' else "🔒"
     mode_text = "FREE" if current_mode == 'free' else "PAID"
     
+    # Create the keyboard with the mode switch as the FIRST button
     layout = [
         [InlineKeyboardButton(f"🔄 Mode: {mode_emoji} {mode_text}", callback_data="adm_toggle_mode")],
         [InlineKeyboardButton("🔧 Toggle Maintenance", callback_data="adm_toggle_maint")],
@@ -508,6 +509,8 @@ def handle_message(update: Update, context: CallbackContext):
     
     elif "Admin Panel" in text:
         if is_admin(user_id):
+            # Log to verify admin is opening panel
+            logger.info(f"Admin {user_id} opened admin panel")
             update.message.reply_text("🔐 Admin Panel:", reply_markup=get_admin_keyboard())
         else:
             update.message.reply_text("❌ Access denied.")
