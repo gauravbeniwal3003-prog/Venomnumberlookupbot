@@ -787,7 +787,6 @@ def handle_callback(update: Update, context: CallbackContext):
             success = set_mode(new_mode)
             
             if success:
-                # Update the admin panel message
                 mode_emoji = "🔓" if new_mode == 'free' else "🔒"
                 mode_text = "FREE" if new_mode == 'free' else "PAID"
                 
@@ -796,7 +795,7 @@ def handle_callback(update: Update, context: CallbackContext):
                 else:
                     notification = f"🔄 *Mode Changed to PAID Mode* {mode_emoji}\n\n✅ Credit and Unlimited plans are now ACTIVE!\n💰 Users can buy credits and unlimited plans.\n📊 Normal credit deduction system is running."
                 
-                # Edit the callback message
+                # Send notification to admin
                 query.message.reply_text(notification, parse_mode='Markdown')
                 
                 # Also send notification to all users
@@ -806,7 +805,7 @@ def handle_callback(update: Update, context: CallbackContext):
                 except:
                     pass
                 
-                # Update the admin keyboard
+                # Send updated admin panel
                 query.message.reply_text("🔐 Admin Panel (Updated):", reply_markup=get_admin_keyboard())
             else:
                 query.message.reply_text("❌ Failed to change mode. Please try again.")
