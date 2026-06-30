@@ -26,12 +26,14 @@ SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 
 # Third-Party Registry Target Endpoint
 LOOKUP_API = "https://tracexdata-api.onrender.com/api/lookup?key=Cybersecurity&numquery={}"
+VEHICLE_LOOKUP_API = "https://tracexdata-api.onrender.com/api/vehicle?key=Venomcybervcle&query={}"
 
 # Initialize Database Pipeline Connection 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # Cost Analysis Metrics
 CREDIT_COST_PER_LOOKUP = 10
+CREDIT_COST_PER_VEHICLE = 2
 FREE_LOOKUP_CREDITS = 10
 
 # Credit-based plans
@@ -305,9 +307,10 @@ After payment, send screenshot here.
 # ============= KEYBOARDS =============
 def get_main_keyboard():
     menu = [
-        ["📞 Number Lookup", "💳 Buy Credits"],
-        ["🌟 Buy Unlimited", "📊 My Plan"],
-        ["🆘 Support", "⚙️ Admin Panel"]
+        ["📞 Number Lookup", "🚗 Vehicle Lookup"],
+        ["💳 Buy Credits", "🌟 Buy Unlimited"],
+        ["📊 My Plan", "🆘 Support"],
+        ["⚙️ Admin Panel"]
     ]
     return ReplyKeyboardMarkup(menu, resize_keyboard=True)
 
@@ -405,6 +408,7 @@ def start(update: Update, context: CallbackContext):
 
 🎯 All features are FREE!
 📞 Unlimited Number Lookups
+🚗 Unlimited Vehicle Lookups
 📊 No credits needed
 
 Enjoy! 🚀
@@ -416,11 +420,13 @@ Enjoy! 🚀
 🎁 New users get 1 FREE lookup!
 
 📞 Number Lookup - Find details
+🚗 Vehicle Lookup - Find vehicle registration metrics
 💳 Buy Credits - Purchase credits
 🌟 Buy Unlimited - Time-based plans
 📊 My Plan - Check balance
 
-1 lookup = {CREDIT_COST_PER_LOOKUP} credits
+1 number lookup = {CREDIT_COST_PER_LOOKUP} credits
+1 vehicle lookup = {CREDIT_COST_PER_VEHICLE} credits
     """
     update.message.reply_text(welcome, parse_mode='Markdown', reply_markup=get_main_keyboard())
 
@@ -453,6 +459,11 @@ def handle_message(update: Update, context: CallbackContext):
         else:
             update.message.reply_text("❌ Send a valid 10-digit number.")
         return
+
+    if context.user_data.get('awaiting_vehicle_lookup'):
+        context.user_data['awaiting_vehicle_lookup'] = False
+        execute_vehicle_lookup(update, context, text.upper())
+        return
     
     if "Number Lookup" in text:
         if mode == 'free':
@@ -467,6 +478,20 @@ def handle_message(update: Update, context: CallbackContext):
                 return
             context.user_data['awaiting_lookup'] = True
             update.message.reply_text("📱 Enter 10-digit number:")
+
+    elif "Vehicle Lookup" in text:
+        if mode == 'free':
+            context.user_data['awaiting_vehicle_lookup'] = True
+            update.message.reply_text("🚗 Enter Vehicle Registration Number (e.g. BR07PB6268):")
+        else:
+            profile = sync_account(user_id)
+            unlimited_active, _, remaining = is_unlimited_active(user_id)
+            
+            if not is_admin(user_id) and not unlimited_active and profile.get('credits', 0) < CREDIT_COST_PER_VEHICLE:
+                update.message.reply_text(f"⚠️ Need {CREDIT_COST_PER_VEHICLE} credits.\nBalance: {profile.get('credits', 0)}\n\nBuy credits or unlimited plan!")
+                return
+            context.user_data['awaiting_vehicle_lookup'] = True
+            update.message.reply_text("🚗 Enter Vehicle Registration Number (e.g. BR07PB6268):")
     
     elif "Buy Credits" in text:
         if mode == 'free':
@@ -491,6 +516,7 @@ def handle_message(update: Update, context: CallbackContext):
 ━━━━━━━━━━━━━━━━━━━━━
 🎉 All features are FREE!
 📞 Unlimited Number Lookups
+🚗 Unlimited Vehicle Lookups
 💳 No credits needed
 ━━━━━━━━━━━━━━━━━━━━━
 📊 Total lookups: {profile.get('total_lookups_done', 0)}
@@ -514,7 +540,8 @@ def handle_message(update: Update, context: CallbackContext):
 💰 Credits: {profile.get('credits', 0)}
 ━━━━━━━━━━━━━━━━━━━━━
 📊 Total lookups: {profile.get('total_lookups_done', 0)}
-💡 1 lookup = {CREDIT_COST_PER_LOOKUP} credits
+💡 1 number lookup = {CREDIT_COST_PER_LOOKUP} credits
+💡 1 vehicle lookup = {CREDIT_COST_PER_VEHICLE} credits
             """
         update.message.reply_text(msg, parse_mode='Markdown')
     
@@ -540,8 +567,7 @@ def handle_message(update: Update, context: CallbackContext):
         user_identifier = get_user_identifier(user_id, user.username)
         
         admin_msg = f"""
-🆘 *NEW SUPPORT MESSAGE*
-━━━━━━━━━━━━━━━━━━━━━
+open-ended request payload:
 🆔 ID: `{support_id}`
 👤 User: {user_identifier}
 ⏰ Time: {timestamp}
@@ -655,6 +681,49 @@ def execute_lookup(update: Update, context: CallbackContext, number: str):
     except Exception as e:
         logger.error(f"Lookup error: {e}")
         update.message.reply_text("❌ Error occurred.")
+    finally:
+        try:
+            msg.delete()
+        except:
+            pass
+
+def execute_vehicle_lookup(update: Update, context: CallbackContext, query_str: str):
+    user_id = update.effective_user.id
+    mode = get_mode()
+    
+    if mode == 'free':
+        profile = sync_account(user_id)
+        supabase.table("users").update({"total_lookups_done": profile.get('total_lookups_done', 0) + 1}).eq("telegram_id", user_id).execute()
+        unlimited_active = False
+    else:
+        profile = sync_account(user_id)
+        unlimited_active, _, remaining = is_unlimited_active(user_id)
+        
+        if not is_admin(user_id) and not unlimited_active and profile.get('credits', 0) < CREDIT_COST_PER_VEHICLE:
+            update.message.reply_text("⚠️ Insufficient balance!")
+            return
+        
+        if not is_admin(user_id) and not unlimited_active:
+            modify_credits(user_id, -CREDIT_COST_PER_VEHICLE)
+        
+        supabase.table("users").update({"total_lookups_done": profile.get('total_lookups_done', 0) + 1}).eq("telegram_id", user_id).execute()
+    
+    msg = update.message.reply_text("🔍 Fetching Vehicle Records...")
+    
+    try:
+        response = requests.get(VEHICLE_LOOKUP_API.format(query_str), timeout=15)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('status') == 'success' and 'results' in data and 'raw_data' in data['results']:
+                raw_data = data['results']['raw_data']
+                update.message.reply_text(raw_data)
+            else:
+                update.message.reply_text(f"❌ No data found for vehicle query: {query_str}")
+        else:
+            update.message.reply_text("❌ API error on remote engine. Try later.")
+    except Exception as e:
+        logger.error(f"Vehicle Lookup error: {e}")
+        update.message.reply_text("❌ An execution error occurred.")
     finally:
         try:
             msg.delete()
